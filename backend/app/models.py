@@ -13,6 +13,7 @@ class NoteBase(SQLModel):
 class Note(NoteBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    user_ip: Optional[str] = Field(default=None)
 
 
 class NoteCreate(NoteBase):

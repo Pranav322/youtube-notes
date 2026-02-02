@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 from app.db import create_db_and_tables, get_session
@@ -38,23 +38,50 @@ def read_root():
 
 
 @app.post("/notes", response_model=NoteRead)
-async def create_note(request: NoteRequest, session: Session = Depends(get_session)):
+async def create_note(
+    request: NoteRequest, req: Request, session: Session = Depends(get_session)
+):
     """
     Creates a new note from a YouTube URL.
     Checks if note exists first.
+    Enforces a limit of 2 videos per user (IP address).
     """
+    user_ip = req.client.host if req.client else "unknown"
+
     # 1. Extract Video ID
     video_id = extract_video_id(request.url)
 
     # 2. Check DB
     statement = select(Note).where(Note.video_id == video_id)
     existing_note = session.exec(statement).first()
+
     if existing_note:
         if not request.force_refresh:
             return existing_note
         else:
+            # Check limit before deleting/recreating
+            user_notes_stmt = select(Note).where(Note.user_ip == user_ip)
+            user_notes = session.exec(user_notes_stmt).all()
+
+            is_own_note = existing_note.user_ip == user_ip
+
+            # If refreshing someone else's note, we are adding to our count
+            if not is_own_note and len(user_notes) >= 2:
+                raise HTTPException(
+                    status_code=403, detail="Limit of 2 videos reached per user."
+                )
+
             session.delete(existing_note)
             session.commit()
+
+    else:
+        # Check limit for new note
+        user_notes_stmt = select(Note).where(Note.user_ip == user_ip)
+        user_notes = session.exec(user_notes_stmt).all()
+        if len(user_notes) >= 2:
+            raise HTTPException(
+                status_code=403, detail="Limit of 2 videos reached per user."
+            )
 
     # 3. Fetch Transcript
     transcript_text = get_transcript_text(video_id)
@@ -74,6 +101,7 @@ async def create_note(request: NoteRequest, session: Session = Depends(get_sessi
         url=request.url,
         title=f"Notes for {video_id}",  # Placeholder
         markdown_content=markdown_content,
+        user_ip=user_ip,
     )
     session.add(new_note)
     session.commit()
