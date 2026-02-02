@@ -8,13 +8,19 @@ services:
       - .env
 
   web:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: /api
     restart: always
     depends_on:
       - api
     ports:
       - "3000:3000"
     environment:
-      # This needs to be the PUBLIC URL where the browser can reach the backend
-      # For local Docker development, localhost:8000 works if you map the port.
+      # In Docker, 'api' is the hostname of the backend service
+      # But since Next.js runs client-side fetch in the browser, 
+      # the browser needs to reach localhost:8000 (if running locally)
+      # or your VPS IP/Domain (if deployed).
+      # For local testing via Docker Compose:
       NEXT_PUBLIC_API_URL: http://localhost:8000
