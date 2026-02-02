@@ -1,0 +1,20 @@
+services:
+  api:
+    build: ./backend
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+
+  web:
+    build: ./frontend
+    restart: always
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+    environment:
+      # This needs to be the PUBLIC URL where the browser can reach the backend
+      # For local Docker development, localhost:8000 works if you map the port.
+      NEXT_PUBLIC_API_URL: http://localhost:8000
