@@ -23,4 +23,4 @@ services:
       # the browser needs to reach localhost:8000 (if running locally)
       # or your VPS IP/Domain (if deployed).
       # For local testing via Docker Compose:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: /api
