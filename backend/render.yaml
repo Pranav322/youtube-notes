@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: youtube-notes-api
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install uv && uv sync --frozen
+    startCommand: uv run gunicorn app.main:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 300
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: AZURE_OPENAI_ENDPOINT
+        sync: false
+      - key: AZURE_OPENAI_API_KEY
+        sync: false
+      - key: AZURE_OPENAI_API_VERSION
+        value: "2024-02-15-preview"
+      - key: AZURE_DEPLOYMENT_NAME
+        value: "gpt-4o"
+      - key: PYTHON_VERSION
+        value: "3.13"
