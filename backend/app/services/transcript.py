@@ -19,22 +19,16 @@ def extract_video_id(url: str) -> str:
     return match.group(1)
 
 
-def get_transcript_text(video_id: str) -> str:
+def get_raw_transcript(video_id: str) -> list[dict]:
     """
-    Fetches the transcript for a given video ID and returns it as a single string.
+    Fetches the transcript for a given video ID and returns the raw list of segments.
+    Each segment is a dict: {'text': '...', 'start': ..., 'duration': ...}
     """
     try:
-        # Fetch the transcript (returns a list of dicts: {'text': '...', 'start': ..., 'duration': ...})
-        # Note: YouTubeTranscriptApi in this version requires instantiation
         api = YouTubeTranscriptApi()
         transcript_list = api.fetch(video_id)
-
-        # Concatenate text parts
-        full_text = " ".join([item.text for item in transcript_list])
-
-        # Clean up whitespace
-        return " ".join(full_text.split())
-
+        # Convert FetchedTranscriptSnippet objects to dicts
+        return [{"text": item.text, "start": item.start, "duration": item.duration} for item in transcript_list]
     except TranscriptsDisabled:
         raise HTTPException(
             status_code=400, detail="Transcripts are disabled for this video."

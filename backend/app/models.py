@@ -7,7 +7,7 @@ class NoteBase(SQLModel):
     video_id: str = Field(index=True)
     url: str
     title: Optional[str] = None
-    markdown_content: Optional[str] = None
+    content_detailed: Optional[str] = None
 
 
 class Note(NoteBase, table=True):

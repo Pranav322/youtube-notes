@@ -4,8 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 from app.db import create_db_and_tables, get_session
 from app.models import Note, NoteRead
-from app.services.transcript import extract_video_id, get_transcript_text
-from app.services.ai import generate_technical_notes
+from app.services.transcript import extract_video_id, get_raw_transcript
+from app.services.ai import generate_notes_map_reduce
 from pydantic import BaseModel
 from typing import Optional
 
@@ -45,8 +45,16 @@ async def create_note(
     Creates a new note from a YouTube URL.
     Checks if note exists first.
     Enforces a limit of 2 videos per user (IP address).
+    Admin IPs are exempt from this limit.
     """
+    # Whitelisted IPs that bypass the 2-video limit
+    # Includes Docker bridge network (172.18.x.x) and localhost variants
+    ADMIN_IPS = {"127.0.0.1", "::1", "localhost"}
+    
     user_ip = req.client.host if req.client else "unknown"
+    # Check if IP is in Docker network (172.16.0.0 - 172.31.255.255)
+    is_docker_network = user_ip.startswith("172.")
+    is_admin = user_ip in ADMIN_IPS or is_docker_network
 
     # 1. Extract Video ID
     video_id = extract_video_id(request.url)
@@ -66,7 +74,7 @@ async def create_note(
             is_own_note = existing_note.user_ip == user_ip
 
             # If refreshing someone else's note, we are adding to our count
-            if not is_own_note and len(user_notes) >= 2:
+            if not is_admin and not is_own_note and len(user_notes) >= 2:
                 raise HTTPException(
                     status_code=403, detail="Limit of 2 videos reached per user."
                 )
@@ -78,29 +86,26 @@ async def create_note(
         # Check limit for new note
         user_notes_stmt = select(Note).where(Note.user_ip == user_ip)
         user_notes = session.exec(user_notes_stmt).all()
-        if len(user_notes) >= 2:
+        if not is_admin and len(user_notes) >= 2:
             raise HTTPException(
                 status_code=403, detail="Limit of 2 videos reached per user."
             )
 
     # 3. Fetch Transcript
-    transcript_text = get_transcript_text(video_id)
+    transcript_segments = get_raw_transcript(video_id)
 
-    # 4. Generate AI Notes
-    # TODO: Make this background task if it takes too long, but for now we wait (simple architecture)
+    # 4. Generate AI Notes (Map-Reduce only)
     try:
-        markdown_content = await generate_technical_notes(transcript_text)
+        content_detailed = await generate_notes_map_reduce(transcript_segments)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI Generation failed: {str(e)}")
 
     # 5. Save to DB
-    # Extract title logic could be better (fetching video metadata), but we'll leave it blank or simple for now
-    # We could add a simple title fetcher later.
     new_note = Note(
         video_id=video_id,
         url=request.url,
-        title=f"Notes for {video_id}",  # Placeholder
-        markdown_content=markdown_content,
+        title=f"Notes for {video_id}",
+        content_detailed=content_detailed,
         user_ip=user_ip,
     )
     session.add(new_note)
