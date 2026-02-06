@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+psycopg2-binary
+youtube-transcript-api
+openai
+pydantic-settings
+python-dotenv
+langchain-text-splitters
