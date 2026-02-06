@@ -1,56 +1,127 @@
 from openai import AsyncAzureOpenAI
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.config import settings
 import logging
+import asyncio
 
 # Configure logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Azure OpenAI Client
 client = AsyncAzureOpenAI(
     azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
     api_key=settings.AZURE_OPENAI_API_KEY,
     api_version=settings.AZURE_OPENAI_API_VERSION,
 )
 
-SYSTEM_PROMPT = """You are a Senior Technical Writer. Convert the following transcript into clean, structured Markdown notes.
+MAP_PROMPT = """You are a Senior Technical Writer. Convert the following transcript segment into clean, structured Markdown notes.
+
+Transcript Segment:
+{text}
 
 Rules:
-- Output pure Markdown only. No explanations outside Markdown.
+- Output pure Markdown only.
 - Use '###' for sub-section headers based on topic shifts.
-- Preserve any described code into proper Markdown code blocks with language tags (e.g., ```python).
+- Preserve any described code into proper Markdown code blocks with language tags.
 - Preserve mathematical expressions as formulas.
 - Use bullet points for step-by-step processes.
 - Bold important terms and concepts.
-- Remove conversational filler (e.g., 'in this video', 'the speaker says').
-- Focus strictly on the technical content: what is being explained and how it works.
-- Include a Title and a Table of Contents at the top.
+- Remove conversational filler.
+- Focus strictly on technical content.
+"""
+
+REDUCE_PROMPT = """You are a Senior Technical Editor. You have been given a set of Markdown notes generated from transcript chunks of a video.
+Your goal is to synthesize them into a single, cohesive technical document.
+
+Input Notes:
+{text}
+
+Rules:
+1. Remove redundant explanations across chunks.
+2. Ensure logical flow from introduction to conclusion.
+3. Generate a concise Table of Contents at the top.
+4. Maintain all code blocks and formulas found in the notes.
+5. Output pure Markdown.
+6. Add a Title at the very top.
+7. Do not summarize the code; keep the full snippets if they are technical examples.
 """
 
 
-async def generate_technical_notes(transcript: str) -> str:
+async def _call_llm(system_prompt: str, user_content: str) -> str:
+    """Helper function to call the Azure OpenAI API."""
+    response = await client.chat.completions.create(
+        model=settings.AZURE_DEPLOYMENT_NAME,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.2,
+    )
+    return response.choices[0].message.content or ""
+
+
+async def generate_notes_map_reduce(transcript_segments: list[dict]) -> str:
     """
-    Sends the transcript to Azure OpenAI to generate technical notes.
+    Map-Reduce generation for high-fidelity notes.
+    
+    1. Chunks the transcript.
+    2. MAP: Processes each chunk independently.
+    3. REDUCE: Synthesizes all chunk notes into a final document.
     """
     try:
-        # Simple token count estimation (4 chars ~= 1 token).
-        # GPT-4o has 128k context. Safe limit approx 120k tokens -> ~480k chars.
-        if len(transcript) > 400000:
-            logger.warning(
-                "Transcript is very long, truncating to 400k chars for safety."
-            )
-            transcript = transcript[:400000]
-
-        response = await client.chat.completions.create(
-            model=settings.AZURE_DEPLOYMENT_NAME,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Here is the transcript:\n\n{transcript}"},
-            ],
-            temperature=0.2,  # Low temperature for factual accuracy
+        # 1. Prepare full text from segments
+        full_text = " ".join([s["text"] for s in transcript_segments])
+        
+        # 2. Chunk the text
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=4000,
+            chunk_overlap=400,
+            length_function=len,
         )
-
-        return response.choices[0].message.content
+        chunks = text_splitter.split_text(full_text)
+        
+        logger.info(f"Map-Reduce: Processing {len(chunks)} chunks")
+        
+        # 3. MAP Phase: Process all chunks concurrently
+        async def process_chunk(chunk_text: str, index: int) -> str:
+            logger.info(f"Processing chunk {index + 1}/{len(chunks)}")
+            prompt = MAP_PROMPT.format(text=chunk_text)
+            return await _call_llm("You are a Senior Technical Writer.", prompt)
+        
+        map_tasks = [process_chunk(chunk, i) for i, chunk in enumerate(chunks)]
+        mapped_notes = await asyncio.gather(*map_tasks)
+        
+        # 4. REDUCE Phase: Combine all notes into final document
+        # If too many chunks, we may need to reduce in batches
+        combined_notes = "\n\n---\n\n".join(mapped_notes)
+        
+        # Check if combined notes are too long for a single reduce call
+        if len(combined_notes) > 100000:
+            # Do iterative reduction in batches of ~5 chunks at a time
+            logger.info("Combined notes too long, doing iterative reduction")
+            batch_size = 5
+            while len(mapped_notes) > 1:
+                new_mapped = []
+                for i in range(0, len(mapped_notes), batch_size):
+                    batch = mapped_notes[i:i+batch_size]
+                    batch_text = "\n\n---\n\n".join(batch)
+                    reduce_prompt = REDUCE_PROMPT.format(text=batch_text)
+                    reduced = await _call_llm(
+                        "You are a Senior Technical Editor.", 
+                        reduce_prompt
+                    )
+                    new_mapped.append(reduced)
+                mapped_notes = new_mapped
+            return mapped_notes[0]
+        else:
+            # Single reduce pass
+            reduce_prompt = REDUCE_PROMPT.format(text=combined_notes)
+            return await _call_llm(
+                "You are a Senior Technical Editor.", 
+                reduce_prompt
+            )
+        
     except Exception as e:
-        logger.error(f"Error generating notes: {e}")
-        # In a real app, might want to raise HTTPException, but returning error string is safer for now to avoid crash loop
-        raise e
+        logger.error(f"Error generating map-reduce notes: {e}")
+        return f"Error: {str(e)}"
