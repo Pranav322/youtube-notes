@@ -17,7 +17,7 @@ export default function Home() {
       setStatusText('');
       return;
     }
-    
+
     const statuses = [
       "Initializing AI Agent...",
       "Extracting Video Transcript...",
@@ -25,7 +25,7 @@ export default function Home() {
       "Formatting Code Blocks...",
       "Finalizing Markdown Structure..."
     ];
-    
+
     let currentIndex = 0;
     setStatusText(statuses[0]);
 
@@ -41,7 +41,7 @@ export default function Home() {
     setIsLoading(true);
     setError(null);
     setNote(null);
-    
+
     try {
       const data = await createNote(url, false);
       setNote(data);
@@ -85,9 +85,9 @@ export default function Home() {
           </p>
         </div>
 
-        <NoteInput 
-          onSubmit={handleSubmit} 
-          isLoading={isLoading} 
+        <NoteInput
+          onSubmit={handleSubmit}
+          isLoading={isLoading}
           statusText={statusText}
         />
 
@@ -99,7 +99,10 @@ export default function Home() {
 
         {note && (
           <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-            <NoteViewer content={note.markdown_content || ''} onRegenerate={handleRegenerate} />
+            <NoteViewer
+              content_detailed={note.content_detailed}
+              onRegenerate={handleRegenerate}
+            />
           </div>
         )}
       </div>

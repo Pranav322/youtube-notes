@@ -2,18 +2,30 @@
 
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Copy, Check, Download, FileText, FileCode, RefreshCw } from 'lucide-react';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { Copy, Check, FileText, FileCode, RefreshCw } from 'lucide-react';
 import { useState, useRef } from 'react';
 import { useReactToPrint } from 'react-to-print';
+import remarkGfm from 'remark-gfm';
+import rehypeSlug from 'rehype-slug';
 
 interface NoteViewerProps {
-  content: string;
+  content_detailed?: string;
   onRegenerate?: () => void;
 }
 
-export function NoteViewer({ content, onRegenerate }: NoteViewerProps) {
+// Helper function to create slug from text (for smooth scrolling)
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .trim();
+}
+
+export function NoteViewer({ content_detailed, onRegenerate }: NoteViewerProps) {
   const contentRef = useRef<HTMLDivElement>(null);
+  const displayContent = content_detailed || '';
 
   const handlePrint = useReactToPrint({
     contentRef: contentRef,
@@ -21,64 +33,107 @@ export function NoteViewer({ content, onRegenerate }: NoteViewerProps) {
   });
 
   const handleDownloadMD = () => {
-    const blob = new Blob([content], { type: 'text/markdown' });
+    const blob = new Blob([displayContent], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'notes.md';
+    a.download = `notes.md`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
+  // Handle anchor link clicks for smooth scrolling
+  const handleAnchorClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (href.startsWith('#')) {
+      e.preventDefault();
+      const targetId = href.slice(1);
+      const targetElement = document.getElementById(targetId);
+      if (targetElement) {
+        targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Update URL without page reload
+        window.history.pushState(null, '', href);
+      }
+    }
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end gap-3 print:hidden">
-        {onRegenerate && (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center print:hidden">
+        <span className="text-sm text-muted-foreground">
+          High-fidelity notes with preserved code & context
+        </span>
+
+        <div className="flex gap-3">
+          {onRegenerate && (
+            <button
+              onClick={onRegenerate}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-primary/20 text-primary hover:bg-primary/5 transition-colors"
+              title="Force regenerate notes from scratch"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Regenerate
+            </button>
+          )}
           <button
-            onClick={onRegenerate}
+            onClick={() => handlePrint && handlePrint()}
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-primary/20 text-primary hover:bg-primary/5 transition-colors"
-            title="Force regenerate notes from scratch"
           >
-            <RefreshCw className="w-4 h-4" />
-            Regenerate
+            <FileText className="w-4 h-4" />
+            Download PDF
           </button>
-        )}
-        <button
-          onClick={() => handlePrint && handlePrint()}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-primary/20 text-primary hover:bg-primary/5 transition-colors"
-        >
-          <FileText className="w-4 h-4" />
-          Download PDF
-        </button>
-        <button
-          onClick={handleDownloadMD}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
-        >
-          <FileCode className="w-4 h-4" />
-          Download MD
-        </button>
+          <button
+            onClick={handleDownloadMD}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
+          >
+            <FileCode className="w-4 h-4" />
+            Download MD
+          </button>
+        </div>
       </div>
 
-      <article 
+      <article
         ref={contentRef}
         className="prose prose-stone dark:prose-invert max-w-none w-full bg-background p-8 md:p-12 rounded-xl shadow-sm border border-muted print:shadow-none print:border-none"
       >
         <div className="print:block hidden mb-8 text-center border-b pb-4">
-            <h1 className="text-2xl font-bold">Technical Notes</h1>
-            <p className="text-sm text-gray-500">Generated by YouTube Technical Note-Taker</p>
+          <h1 className="text-2xl font-bold">Technical Notes</h1>
+          <p className="text-sm text-gray-500">Generated by YouTube Technical Note-Taker</p>
         </div>
         <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeSlug]}
           components={{
-            h1: ({node, ...props}) => <h1 className="text-3xl font-extrabold tracking-tight text-primary mb-6" {...props} />,
-            h2: ({node, ...props}) => <h2 className="text-2xl font-bold border-b border-primary/20 pb-2 mt-8 mb-4" {...props} />,
-            h3: ({node, ...props}) => <h3 className="text-xl font-semibold text-primary/90 mt-6 mb-3" {...props} />,
-            a: ({node, ...props}) => <a className="text-primary hover:text-primary/80 no-underline border-b border-primary/30 hover:border-primary transition-colors" {...props} />,
+            h1: ({ node, children, ...props }) => {
+              const id = typeof children === 'string' ? slugify(children) : props.id;
+              return <h1 id={id} className="text-3xl font-extrabold tracking-tight text-primary mb-6 scroll-mt-20" {...props}>{children}</h1>;
+            },
+            h2: ({ node, children, ...props }) => {
+              const id = typeof children === 'string' ? slugify(children) : props.id;
+              return <h2 id={id} className="text-2xl font-bold border-b border-primary/20 pb-2 mt-8 mb-4 scroll-mt-20" {...props}>{children}</h2>;
+            },
+            h3: ({ node, children, ...props }) => {
+              const id = typeof children === 'string' ? slugify(children) : props.id;
+              return <h3 id={id} className="text-xl font-semibold text-primary/90 mt-6 mb-3 scroll-mt-20" {...props}>{children}</h3>;
+            },
+            a: ({ node, href, children, ...props }) => {
+              const isAnchor = href?.startsWith('#');
+              return (
+                <a
+                  href={href}
+                  onClick={isAnchor ? (e) => handleAnchorClick(e, href!) : undefined}
+                  className="text-primary hover:text-primary/80 no-underline border-b border-primary/30 hover:border-primary transition-colors cursor-pointer"
+                  {...props}
+                >
+                  {children}
+                </a>
+              );
+            },
             code({ node, inline, className, children, ...props }: any) {
               const match = /language-(\w+)/.exec(className || '');
               const codeString = String(children).replace(/\n$/, '');
-              
+
               if (!inline && match) {
                 return (
                   <div className="relative group rounded-lg overflow-hidden my-6 shadow-md border border-muted-foreground/20 print:border-gray-300">
@@ -105,7 +160,7 @@ export function NoteViewer({ content, onRegenerate }: NoteViewerProps) {
             },
           }}
         >
-          {content}
+          {displayContent}
         </ReactMarkdown>
       </article>
     </div>

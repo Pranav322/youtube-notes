@@ -14,7 +14,7 @@ export interface Note {
   video_id: string;
   url: string;
   title: string;
-  markdown_content: string;
+  content_detailed?: string;
   created_at: string;
 }
 
