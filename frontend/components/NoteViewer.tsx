@@ -11,6 +11,9 @@ import rehypeSlug from 'rehype-slug';
 
 interface NoteViewerProps {
   content_detailed?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  generation_cost?: number;
   onRegenerate?: () => void;
 }
 
@@ -23,7 +26,7 @@ function slugify(text: string): string {
     .trim();
 }
 
-export function NoteViewer({ content_detailed, onRegenerate }: NoteViewerProps) {
+export function NoteViewer({ content_detailed, input_tokens, output_tokens, generation_cost, onRegenerate }: NoteViewerProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const displayContent = content_detailed || '';
 
@@ -61,10 +64,16 @@ export function NoteViewer({ content_detailed, onRegenerate }: NoteViewerProps) 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center print:hidden">
-        <span className="text-sm text-muted-foreground">
-          High-fidelity notes with preserved code & context
-        </span>
-
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-muted-foreground">
+            High-fidelity notes with preserved code & context
+          </span>
+          {generation_cost !== undefined && generation_cost > 0 && (
+            <span className="text-xs px-3 py-1.5 rounded-lg border border-primary/20 text-primary font-medium">
+              ${generation_cost.toFixed(4)} • {((input_tokens || 0) + (output_tokens || 0)).toLocaleString()} tokens
+            </span>
+          )}
+        </div>
         <div className="flex gap-3">
           {onRegenerate && (
             <button

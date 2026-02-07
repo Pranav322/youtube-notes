@@ -15,6 +15,9 @@ export interface Note {
   url: string;
   title: string;
   content_detailed?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  generation_cost?: number;
   created_at: string;
 }
 
