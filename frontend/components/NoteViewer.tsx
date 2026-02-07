@@ -70,7 +70,7 @@ export function NoteViewer({ content_detailed, input_tokens, output_tokens, gene
           </span>
           {generation_cost !== undefined && generation_cost > 0 && (
             <span className="text-xs px-3 py-1.5 rounded-lg border border-primary/20 text-primary font-medium">
-              ${generation_cost.toFixed(4)} • {((input_tokens || 0) + (output_tokens || 0)).toLocaleString()} tokens
+              ₹{(generation_cost * 90).toFixed(2)} • {((input_tokens || 0) + (output_tokens || 0)).toLocaleString()} tokens
             </span>
           )}
         </div>
