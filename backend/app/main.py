@@ -96,16 +96,19 @@ async def create_note(
 
     # 4. Generate AI Notes (Map-Reduce only)
     try:
-        content_detailed = await generate_notes_map_reduce(transcript_segments)
+        content_detailed, cost_stats = await generate_notes_map_reduce(transcript_segments)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI Generation failed: {str(e)}")
 
-    # 5. Save to DB
+    # 5. Save to DB (including cost tracking)
     new_note = Note(
         video_id=video_id,
         url=request.url,
         title=f"Notes for {video_id}",
         content_detailed=content_detailed,
+        input_tokens=cost_stats.get("input_tokens"),
+        output_tokens=cost_stats.get("output_tokens"),
+        generation_cost=cost_stats.get("cost"),
         user_ip=user_ip,
     )
     session.add(new_note)

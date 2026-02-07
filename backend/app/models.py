@@ -8,6 +8,10 @@ class NoteBase(SQLModel):
     url: str
     title: Optional[str] = None
     content_detailed: Optional[str] = None
+    # Cost tracking
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    generation_cost: Optional[float] = None  # USD
 
 
 class Note(NoteBase, table=True):
