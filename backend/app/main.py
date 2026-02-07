@@ -48,13 +48,25 @@ async def create_note(
     Admin IPs are exempt from this limit.
     """
     # Whitelisted IPs that bypass the 2-video limit
-    # Includes Docker bridge network (172.18.x.x) and localhost variants
-    ADMIN_IPS = {"127.0.0.1", "::1", "localhost"}
+    # Load from ADMIN_IPS env var (comma-separated) or use defaults
+    import os
+    admin_ips_env = os.getenv("ADMIN_IPS", "")
+    ADMIN_IPS = set(ip.strip() for ip in admin_ips_env.split(",") if ip.strip())
     
-    user_ip = req.client.host if req.client else "unknown"
-    # Check if IP is in Docker network (172.16.0.0 - 172.31.255.255)
-    is_docker_network = user_ip.startswith("172.")
-    is_admin = user_ip in ADMIN_IPS or is_docker_network
+    # Get real client IP (Cloudflare sends it in headers)
+    # Priority: CF-Connecting-IP > X-Forwarded-For > req.client.host
+    cf_ip = req.headers.get("cf-connecting-ip")
+    forwarded_for = req.headers.get("x-forwarded-for")
+    
+    if cf_ip:
+        user_ip = cf_ip
+    elif forwarded_for:
+        # X-Forwarded-For can have multiple IPs, first one is the client
+        user_ip = forwarded_for.split(",")[0].strip()
+    else:
+        user_ip = req.client.host if req.client else "unknown"
+    
+    is_admin = user_ip in ADMIN_IPS
 
     # 1. Extract Video ID
     video_id = extract_video_id(request.url)
