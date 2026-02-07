@@ -47,9 +47,45 @@ Rules:
 7. Do not summarize the code; keep the full snippets if they are technical examples.
 """
 
+# GPT-4.1 pricing (Azure OpenAI - Standard/Global, per 1K tokens)
+# Source: https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service/
+COST_PER_1K_INPUT = 0.002    # $2.00 per 1M input tokens
+COST_PER_1K_OUTPUT = 0.008   # $8.00 per 1M output tokens
+
+# Track total tokens across a generation run
+class TokenTracker:
+    def __init__(self):
+        self.total_input = 0
+        self.total_output = 0
+    
+    def add(self, input_tokens: int, output_tokens: int):
+        self.total_input += input_tokens
+        self.total_output += output_tokens
+    
+    def get_cost(self) -> float:
+        input_cost = (self.total_input / 1000) * COST_PER_1K_INPUT
+        output_cost = (self.total_output / 1000) * COST_PER_1K_OUTPUT
+        return input_cost + output_cost
+    
+    def get_stats(self) -> dict:
+        return {
+            "input_tokens": self.total_input,
+            "output_tokens": self.total_output,
+            "cost": self.get_cost()
+        }
+    
+    def log_summary(self):
+        cost = self.get_cost()
+        logger.info(f"Token Usage: {self.total_input} input, {self.total_output} output")
+        logger.info(f"Estimated Cost: ${cost:.4f}")
+
+# Global tracker for current generation
+_current_tracker: TokenTracker | None = None
 
 async def _call_llm(system_prompt: str, user_content: str) -> str:
     """Helper function to call the Azure OpenAI API."""
+    global _current_tracker
+    
     response = await client.chat.completions.create(
         model=settings.AZURE_DEPLOYMENT_NAME,
         messages=[
@@ -58,17 +94,29 @@ async def _call_llm(system_prompt: str, user_content: str) -> str:
         ],
         temperature=0.2,
     )
+    
+    # Track tokens
+    if response.usage and _current_tracker:
+        _current_tracker.add(response.usage.prompt_tokens, response.usage.completion_tokens)
+    
     return response.choices[0].message.content or ""
 
 
-async def generate_notes_map_reduce(transcript_segments: list[dict]) -> str:
+async def generate_notes_map_reduce(transcript_segments: list[dict]) -> tuple[str, dict]:
     """
     Map-Reduce generation for high-fidelity notes.
     
     1. Chunks the transcript.
     2. MAP: Processes each chunk independently.
     3. REDUCE: Synthesizes all chunk notes into a final document.
+    
+    Returns:
+        tuple: (content_markdown, cost_stats)
+        cost_stats = {"input_tokens": int, "output_tokens": int, "cost": float}
     """
+    global _current_tracker
+    _current_tracker = TokenTracker()
+    
     try:
         # 1. Prepare full text from segments
         full_text = " ".join([s["text"] for s in transcript_segments])
@@ -113,15 +161,18 @@ async def generate_notes_map_reduce(transcript_segments: list[dict]) -> str:
                     )
                     new_mapped.append(reduced)
                 mapped_notes = new_mapped
-            return mapped_notes[0]
+            _current_tracker.log_summary()
+            return mapped_notes[0], _current_tracker.get_stats()
         else:
             # Single reduce pass
             reduce_prompt = REDUCE_PROMPT.format(text=combined_notes)
-            return await _call_llm(
+            result = await _call_llm(
                 "You are a Senior Technical Editor.", 
                 reduce_prompt
             )
+            _current_tracker.log_summary()
+            return result, _current_tracker.get_stats()
         
     except Exception as e:
         logger.error(f"Error generating map-reduce notes: {e}")
-        return f"Error: {str(e)}"
+        return f"Error: {str(e)}", {"input_tokens": 0, "output_tokens": 0, "cost": 0.0}
