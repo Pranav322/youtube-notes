@@ -7,7 +7,7 @@ from youtube_transcript_api import (
 from fastapi import HTTPException
 
 
-VIDEO_ID_REGEX = re.compile(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*")
+VIDEO_ID_REGEX = re.compile(r"(?:v=|\/live\/|\/shorts\/|\/embed\/|\/v\/|youtu\.be\/)([0-9A-Za-z_-]{11})")
 
 
 def extract_video_id(url: str) -> str:
