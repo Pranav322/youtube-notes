@@ -12,7 +12,7 @@ def extract_video_id(url: str) -> str:
     Extracts the video ID from a YouTube URL.
     Supports standard, shortened, and embed URLs.
     """
-    regex = r"(?:v=|\/)([0-9A-Za-z_-]{11}).*"
+    regex = r"(?:v=|\/live\/|\/shorts\/|\/embed\/|\/v\/|youtu\.be\/)([0-9A-Za-z_-]{11})"
     match = re.search(regex, url)
     if not match:
         raise HTTPException(status_code=400, detail="Invalid YouTube URL")
