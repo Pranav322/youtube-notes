@@ -6,6 +6,7 @@ from app.db import create_db_and_tables, get_session
 from app.models import Note, NoteRead
 from app.services.transcript import extract_video_id, get_raw_transcript
 from app.services.ai import generate_notes_map_reduce
+from app.config import settings
 from pydantic import BaseModel
 from typing import Optional
 
@@ -49,9 +50,7 @@ async def create_note(
     """
     # Whitelisted IPs that bypass the 2-video limit
     # Load from ADMIN_IPS env var (comma-separated) or use defaults
-    import os
-    admin_ips_env = os.getenv("ADMIN_IPS", "")
-    ADMIN_IPS = set(ip.strip() for ip in admin_ips_env.split(",") if ip.strip())
+    ADMIN_IPS = settings.admin_ips_set
     
     # Get real client IP (Cloudflare sends it in headers)
     # Priority: CF-Connecting-IP > X-Forwarded-For > req.client.host
