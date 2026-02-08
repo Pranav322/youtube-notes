@@ -15,6 +15,13 @@ client = AsyncAzureOpenAI(
     api_version=settings.AZURE_OPENAI_API_VERSION,
 )
 
+# Shared text splitter to avoid re-instantiation on every request
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=4000,
+    chunk_overlap=400,
+    length_function=len,
+)
+
 MAP_PROMPT = """You are a Senior Technical Writer. Convert the following transcript segment into clean, structured Markdown notes.
 
 Transcript Segment:
@@ -115,12 +122,7 @@ async def generate_notes_map_reduce(transcript_segments: list[dict]) -> tuple[st
         # 1. Prepare full text from segments
         full_text = " ".join([s["text"] for s in transcript_segments])
         
-        # 2. Chunk the text
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=4000,
-            chunk_overlap=400,
-            length_function=len,
-        )
+        # 2. Chunk the text using the shared splitter
         chunks = text_splitter.split_text(full_text)
         
         logger.info(f"Map-Reduce: Processing {len(chunks)} chunks")
