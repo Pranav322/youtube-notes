@@ -6,12 +6,12 @@ from app.db import create_db_and_tables, get_session
 from app.models import Note, NoteRead
 from app.services.transcript import extract_video_id, get_raw_transcript
 from app.services.ai import generate_notes_map_reduce
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 from typing import Optional
 
 
 class NoteRequest(BaseModel):
-    url: str
+    url: HttpUrl
     force_refresh: bool = False
 
 
@@ -69,7 +69,7 @@ async def create_note(
     is_admin = user_ip in ADMIN_IPS
 
     # 1. Extract Video ID
-    video_id = extract_video_id(request.url)
+    video_id = extract_video_id(str(request.url))
 
     # 2. Check DB
     statement = select(Note).where(Note.video_id == video_id)
@@ -115,7 +115,7 @@ async def create_note(
     # 5. Save to DB (including cost tracking)
     new_note = Note(
         video_id=video_id,
-        url=request.url,
+        url=str(request.url),
         title=f"Notes for {video_id}",
         content_detailed=content_detailed,
         input_tokens=cost_stats.get("input_tokens"),
