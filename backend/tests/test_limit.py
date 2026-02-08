@@ -58,8 +58,8 @@ def test_limit_enforcement(mock_generate, mock_transcript, mock_extract, session
 
     # Create 3rd note - should fail
     response = client.post("/notes", json={"url": "http://youtube.com/vid3"}, headers=headers)
-    assert response.status_code == 403
-    assert response.json()["detail"] == "Limit of 2 videos reached per user."
+    assert response.status_code == 429
+    assert "You've reached the limit of 2 videos." in response.json()["detail"]["message"]
 
 @patch("app.main.extract_video_id")
 @patch("app.main.get_raw_transcript")
