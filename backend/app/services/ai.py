@@ -150,17 +150,16 @@ async def generate_notes_map_reduce(transcript_segments: list[dict]) -> tuple[st
             logger.info("Combined notes too long, doing iterative reduction")
             batch_size = 5
             while len(mapped_notes) > 1:
-                new_mapped = []
+                reduce_tasks = []
                 for i in range(0, len(mapped_notes), batch_size):
                     batch = mapped_notes[i:i+batch_size]
                     batch_text = "\n\n---\n\n".join(batch)
                     reduce_prompt = REDUCE_PROMPT.format(text=batch_text)
-                    reduced = await _call_llm(
+                    reduce_tasks.append(_call_llm(
                         "You are a Senior Technical Editor.", 
                         reduce_prompt
-                    )
-                    new_mapped.append(reduced)
-                mapped_notes = new_mapped
+                    ))
+                mapped_notes = await asyncio.gather(*reduce_tasks)
             _current_tracker.log_summary()
             return mapped_notes[0], _current_tracker.get_stats()
         else:
