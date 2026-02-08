@@ -6,7 +6,6 @@ from app.db import create_db_and_tables, get_session
 from app.models import Note, NoteRead
 from app.services.transcript import extract_video_id, get_raw_transcript
 from app.services.ai import generate_notes_map_reduce
-from app.config import settings
 from pydantic import BaseModel
 from typing import Optional
 
@@ -50,7 +49,9 @@ async def create_note(
     """
     # Whitelisted IPs that bypass the 2-video limit
     # Load from ADMIN_IPS env var (comma-separated) or use defaults
-    ADMIN_IPS = settings.admin_ips_set
+    import os
+    admin_ips_env = os.getenv("ADMIN_IPS", "")
+    ADMIN_IPS = set(ip.strip() for ip in admin_ips_env.split(",") if ip.strip())
     
     # Get real client IP (Cloudflare sends it in headers)
     # Priority: CF-Connecting-IP > X-Forwarded-For > req.client.host
@@ -87,12 +88,7 @@ async def create_note(
             # If refreshing someone else's note, we are adding to our count
             if not is_admin and not is_own_note and len(user_notes) >= 2:
                 raise HTTPException(
-                    status_code=429,
-                    detail={
-                        "message": "You've reached the limit of 2 videos.",
-                        "note": "This site is in testing. You can still view your existing notes below.",
-                        "limit_reached": True
-                    }
+                    status_code=403, detail="Limit of 2 videos reached per user."
                 )
 
             session.delete(existing_note)
@@ -104,12 +100,7 @@ async def create_note(
         user_notes = session.exec(user_notes_stmt).all()
         if not is_admin and len(user_notes) >= 2:
             raise HTTPException(
-                status_code=429,
-                detail={
-                    "message": "You've reached the limit of 2 videos.",
-                    "note": "This site is in testing. You can still view your existing notes below.",
-                    "limit_reached": True
-                }
+                status_code=403, detail="Limit of 2 videos reached per user."
             )
 
     # 3. Fetch Transcript
@@ -137,13 +128,6 @@ async def create_note(
     session.refresh(new_note)
 
     return new_note
-
-
-@app.get("/notes", response_model=list[NoteRead])
-def list_notes(session: Session = Depends(get_session)):
-    """List all notes, ordered by most recent first."""
-    statement = select(Note).order_by(Note.created_at.desc())
-    return session.exec(statement).all()
 
 
 @app.get("/notes/{note_id}", response_model=NoteRead)

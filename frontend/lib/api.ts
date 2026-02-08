@@ -30,8 +30,3 @@ export const getNote = async (id: number): Promise<Note> => {
   const response = await api.get<Note>(`/notes/${id}`);
   return response.data;
 };
-
-export const listNotes = async (): Promise<Note[]> => {
-  const response = await api.get<Note[]>('/notes');
-  return response.data;
-};
