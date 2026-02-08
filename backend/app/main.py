@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
-from sqlmodel import Session, select
+from sqlmodel import Session, select, func
 from app.db import create_db_and_tables, get_session
 from app.models import Note, NoteRead
 from app.services.transcript import extract_video_id, get_raw_transcript
@@ -79,13 +79,13 @@ async def create_note(
             return existing_note
         else:
             # Check limit before deleting/recreating
-            user_notes_stmt = select(Note).where(Note.user_ip == user_ip)
-            user_notes = session.exec(user_notes_stmt).all()
+            user_notes_count_stmt = select(func.count()).select_from(Note).where(Note.user_ip == user_ip)
+            user_notes_count = session.exec(user_notes_count_stmt).one()
 
             is_own_note = existing_note.user_ip == user_ip
 
             # If refreshing someone else's note, we are adding to our count
-            if not is_admin and not is_own_note and len(user_notes) >= 2:
+            if not is_admin and not is_own_note and user_notes_count >= 2:
                 raise HTTPException(
                     status_code=429,
                     detail={
@@ -100,9 +100,9 @@ async def create_note(
 
     else:
         # Check limit for new note
-        user_notes_stmt = select(Note).where(Note.user_ip == user_ip)
-        user_notes = session.exec(user_notes_stmt).all()
-        if not is_admin and len(user_notes) >= 2:
+        user_notes_count_stmt = select(func.count()).select_from(Note).where(Note.user_ip == user_ip)
+        user_notes_count = session.exec(user_notes_count_stmt).one()
+        if not is_admin and user_notes_count >= 2:
             raise HTTPException(
                 status_code=429,
                 detail={
