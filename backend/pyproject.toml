@@ -16,3 +16,8 @@ dependencies = [
     "youtube-transcript-api>=1.2.4",
     "langchain-text-splitters>=0.1.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
