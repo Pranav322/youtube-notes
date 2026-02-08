@@ -79,13 +79,8 @@ class TokenTracker:
         logger.info(f"Token Usage: {self.total_input} input, {self.total_output} output")
         logger.info(f"Estimated Cost: ${cost:.4f}")
 
-# Global tracker for current generation
-_current_tracker: TokenTracker | None = None
-
-async def _call_llm(system_prompt: str, user_content: str) -> str:
+async def _call_llm(system_prompt: str, user_content: str, tracker: TokenTracker | None = None) -> str:
     """Helper function to call the Azure OpenAI API."""
-    global _current_tracker
-    
     response = await client.chat.completions.create(
         model=settings.AZURE_DEPLOYMENT_NAME,
         messages=[
@@ -96,8 +91,8 @@ async def _call_llm(system_prompt: str, user_content: str) -> str:
     )
     
     # Track tokens
-    if response.usage and _current_tracker:
-        _current_tracker.add(response.usage.prompt_tokens, response.usage.completion_tokens)
+    if response.usage and tracker:
+        tracker.add(response.usage.prompt_tokens, response.usage.completion_tokens)
     
     return response.choices[0].message.content or ""
 
@@ -114,8 +109,7 @@ async def generate_notes_map_reduce(transcript_segments: list[dict]) -> tuple[st
         tuple: (content_markdown, cost_stats)
         cost_stats = {"input_tokens": int, "output_tokens": int, "cost": float}
     """
-    global _current_tracker
-    _current_tracker = TokenTracker()
+    tracker = TokenTracker()
     
     try:
         # 1. Prepare full text from segments
@@ -135,7 +129,7 @@ async def generate_notes_map_reduce(transcript_segments: list[dict]) -> tuple[st
         async def process_chunk(chunk_text: str, index: int) -> str:
             logger.info(f"Processing chunk {index + 1}/{len(chunks)}")
             prompt = MAP_PROMPT.format(text=chunk_text)
-            return await _call_llm("You are a Senior Technical Writer.", prompt)
+            return await _call_llm("You are a Senior Technical Writer.", prompt, tracker)
         
         map_tasks = [process_chunk(chunk, i) for i, chunk in enumerate(chunks)]
         mapped_notes = await asyncio.gather(*map_tasks)
@@ -157,21 +151,23 @@ async def generate_notes_map_reduce(transcript_segments: list[dict]) -> tuple[st
                     reduce_prompt = REDUCE_PROMPT.format(text=batch_text)
                     reduced = await _call_llm(
                         "You are a Senior Technical Editor.", 
-                        reduce_prompt
+                        reduce_prompt,
+                        tracker
                     )
                     new_mapped.append(reduced)
                 mapped_notes = new_mapped
-            _current_tracker.log_summary()
-            return mapped_notes[0], _current_tracker.get_stats()
+            tracker.log_summary()
+            return mapped_notes[0], tracker.get_stats()
         else:
             # Single reduce pass
             reduce_prompt = REDUCE_PROMPT.format(text=combined_notes)
             result = await _call_llm(
                 "You are a Senior Technical Editor.", 
-                reduce_prompt
+                reduce_prompt,
+                tracker
             )
-            _current_tracker.log_summary()
-            return result, _current_tracker.get_stats()
+            tracker.log_summary()
+            return result, tracker.get_stats()
         
     except Exception as e:
         logger.error(f"Error generating map-reduce notes: {e}")
